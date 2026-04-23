@@ -137,43 +137,44 @@ jobs:
           path: trivy-image.sarif
 
   zap:
-    runs-on: ubuntu-latest
-    needs: build-push
-    services:
-      juiceshop:
-        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-        ports:
-          - 3000:3000
-    steps:
-      - name: Wait for Juice Shop
-        run: |
-          for i in {1..60}; do
-            if curl -sf http://localhost:3000/ >/dev/null; then
-              echo "Juice Shop is up"; exit 0
-            fi
-            echo "waiting... ($i)"; sleep 2
-          done
-          echo "Juice Shop failed to respond"; exit 1
+      runs-on: ubuntu-latest
+      needs: build-push
+      services:
+        juiceshop:
+          image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          credentials:
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
+          ports:
+            - 3000:3000
+      steps:
+        - name: Wait for Juice Shop
+          run: |
+            for i in {1..60}; do
+              if curl -sf http://localhost:3000/ >/dev/null; then
+                echo "Juice Shop is up"; exit 0
+              fi
+              echo "waiting... ($i)"; sleep 2
+            done
+            echo "Juice Shop failed to respond"; exit 1
 
-      - name: ZAP Baseline scan
-        continue-on-error: true
-        run: |
-          docker run --network=host -v $(pwd):/zap/wrk/:rw \
-            -t ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://localhost:3000 \
-            -J report_json.json -w report_md.md -r report_html.html
+        - name: ZAP Baseline scan
+          continue-on-error: true
+          run: |
+            chmod -R a+w .
+            docker run --network=host -v $(pwd):/zap/wrk/:rw \
+              -t ghcr.io/zaproxy/zaproxy:stable \
+              zap-baseline.py -t http://localhost:3000 \
+              -J report_json.json -w report_md.md -r report_html.html
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: zap_scan
-          path: |
-            report_json.json
-            report_md.md
-            report_html.html
+        - uses: actions/upload-artifact@v4
+          if: always()
+          with:
+            name: zap_scan
+            path: |
+              report_json.json
+              report_md.md
+              report_html.html
 
   defectdojo:
     runs-on: ubuntu-latest
@@ -183,6 +184,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: reports
+          pattern: '!(*.dockerbuild)'
 
       - name: Import Gitleaks
         uses: portswigger-cloud/defectdojo-import-scan@v1
