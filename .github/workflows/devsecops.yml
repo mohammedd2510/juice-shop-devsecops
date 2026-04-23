@@ -205,7 +205,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Map defectdojo.local to EC2 host
-        run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
+        run: echo "100.53.151.97 defectdojo.local" | sudo tee -a /etc/hosts
 
       - name: Test token curl
         run: |
