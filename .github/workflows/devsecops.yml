@@ -32,6 +32,8 @@ jobs:
           name: gitleaks
           path: results.sarif
 
+          
+
   # semgrep:
   #   runs-on: ubuntu-latest
   #   container: semgrep/semgrep
