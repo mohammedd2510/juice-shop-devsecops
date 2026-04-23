@@ -117,7 +117,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          EC2_HOST=$(terraform output -raw ec2_host)
+          EC2_HOST=$(terraform output -raw ec2_public_ip)
           terraform output -raw ssh_private_key > /tmp/id_ed25519
 
           gh secret set EC2_HOST --body "$EC2_HOST" --repo ${{ github.repository }}
