@@ -114,13 +114,14 @@ jobs:
         if: github.event.inputs.action == 'apply'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           EC2_HOST=$(terraform output -raw ec2_host)
           terraform output -raw ssh_private_key > /tmp/id_ed25519
 
-          gh secret set EC2_HOST  --body "$EC2_HOST"          --repo ${{ github.repository }}
-          gh secret set EC2_USER  --body "ec2-user"            --repo ${{ github.repository }}
+          gh secret set EC2_HOST --body "$EC2_HOST" --repo ${{ github.repository }}
+          gh secret set EC2_USER --body "ec2-user"  --repo ${{ github.repository }}
           gh secret set EC2_SSH_PRIVATE_KEY --body "$(cat /tmp/id_ed25519)" --repo ${{ github.repository }}
 
           echo "Provisioned: $EC2_HOST"
-          echo "Secrets EC2_HOST, EC2_USER, EC2_SSH_PRIVATE_KEY updated."
