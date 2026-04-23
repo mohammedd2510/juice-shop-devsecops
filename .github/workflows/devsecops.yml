@@ -201,7 +201,17 @@ jobs:
           getent hosts defectdojo.local || echo "resolution failed"
           echo "--- connectivity test ---"
           curl -v --max-time 10 http://defectdojo.local/ 2>&1 | head -30
+  test-defectdojo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Map defectdojo.local to EC2 host
+        run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
 
+      - name: Test token curl
+        run: |
+          curl -v -X POST "http://defectdojo.local/api/v2/api-token-auth/" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"j113NZoIE8vYOSYHz7NtkS"}'
       - name: Get DefectDojo API token
         run: |
           echo "--- Token request ---"
