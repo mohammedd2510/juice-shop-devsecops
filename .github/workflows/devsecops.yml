@@ -87,7 +87,7 @@ jobs:
         continue-on-error: true
         with:
           scan-type: config
-          scan-ref: .
+          scan-ref: Dockerfile
           format: sarif
           output: trivy-config.sarif
       - uses: actions/upload-artifact@v4
@@ -241,7 +241,7 @@ jobs:
           defectdojo-product-type: 'Research and Development'
           defectdojo-product: 'Juice Shop DevSecOps'
           defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Trivy Scan'
+          defectdojo-scan-type: 'Dockerfile Scan'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
           scan-results-file-name: reports/trivy-config/trivy-config.sarif
 
@@ -255,7 +255,7 @@ jobs:
           defectdojo-product-type: 'Research and Development'
           defectdojo-product: 'Juice Shop DevSecOps'
           defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Trivy Scan'
+          defectdojo-scan-type: 'Trivy Image Scan'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
           scan-results-file-name: reports/trivy-image/trivy-image.sarif
 
