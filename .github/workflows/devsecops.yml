@@ -25,6 +25,7 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: "true"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -36,8 +37,9 @@ jobs:
     container: semgrep/semgrep
     steps:
       - uses: actions/checkout@v4
-      - run: semgrep scan --config auto --sarif --output semgrep.sarif
+      - name: Semgrep scan
         continue-on-error: true
+        run: semgrep scan --config auto --sarif-output=semgrep.sarif
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -51,9 +53,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install --ignore-scripts
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node-modules-
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Install Retire.js
+        run: npm install -g retire
+
+      - name: Retire.js scan
         continue-on-error: true
-      - run: npm install -g retire && retire --outputformat json --outputpath retire.json || true
+        run: retire --outputformat json --outputpath retire.json --verbose
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -64,12 +82,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           scan-type: config
           scan-ref: .
           format: sarif
           output: trivy-config.sarif
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -81,6 +102,7 @@ jobs:
     needs: [gitleaks, semgrep, retirejs, trivy-config]
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -93,16 +115,21 @@ jobs:
           tags: |
             ${{ env.IMAGE_SHA }}
             ${{ env.IMAGE_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   trivy-image:
     runs-on: ubuntu-latest
     needs: build-push
     steps:
-      - uses: aquasecurity/trivy-action@master
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: ${{ env.IMAGE_SHA }}
           format: sarif
           output: trivy-image.sarif
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -121,9 +148,20 @@ jobs:
         ports:
           - 3000:3000
     steps:
-      - uses: zaproxy/action-baseline@v0.13.0
+      - name: Wait for Juice Shop
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3000/ >/dev/null; then
+              echo "Juice Shop is up"; exit 0
+            fi
+            echo "waiting... ($i)"; sleep 2
+          done
+          echo "Juice Shop failed to respond"; exit 1
+
+      - name: ZAP Baseline
+        uses: zaproxy/action-baseline@v0.13.0
         with:
-          target: http://juiceshop:3000
+          target: http://localhost:3000
           allow_issue_writing: false
 
   defectdojo:
@@ -139,7 +177,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'Gitleaks Scan'
           engagement-name: ${{ github.repository }}
@@ -151,7 +189,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'Semgrep JSON Report'
           engagement-name: ${{ github.repository }}
@@ -163,7 +201,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'Retire.js Scan'
           engagement-name: ${{ github.repository }}
@@ -175,7 +213,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'Trivy Scan'
           engagement-name: ${{ github.repository }}
@@ -187,7 +225,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'Trivy Scan'
           engagement-name: ${{ github.repository }}
@@ -199,7 +237,7 @@ jobs:
         uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url:   ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-url:    ${{ secrets.DEFECTDOJO_URL }}
           defectdojo-api-key: ${{ secrets.DEFECTDOJO_API_TOKEN }}
           scan-type: 'ZAP Scan'
           engagement-name: ${{ github.repository }}
