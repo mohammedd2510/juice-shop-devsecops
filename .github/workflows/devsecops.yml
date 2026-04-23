@@ -212,6 +212,7 @@ jobs:
           curl -v -X POST "http://defectdojo.local/api/v2/api-token-auth/" \
             -H "Content-Type: application/json" \
             -d '{"username":"admin","password":"j113NZoIE8vYOSYHz7NtkS"}'
+            
       - name: Get DefectDojo API token
         run: |
           echo "--- Token request ---"
