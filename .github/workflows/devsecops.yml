@@ -181,6 +181,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gitleaks, semgrep, retirejs, trivy-config, trivy-image, zap]
     if: always()
+    env:
+      DD_URL: ${{ secrets.DEFECTDOJO_URL }}
+      PRODUCT_TYPE: 'Research and Development'
+      PRODUCT: 'Juice Shop DevSecOps'
+      ENVIRONMENT: 'Development'
+      ENGAGEMENT: juice-shop-${{ github.ref_name }}
     steps:
       - name: Map defectdojo.local to EC2 host
         run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
@@ -189,89 +195,98 @@ jobs:
         with:
           path: reports
 
+      - name: Get DefectDojo API token
+        run: |
+          TOKEN=$(curl -sf -X POST "${DD_URL}/api/v2/api-token-auth/" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"admin\",\"password\":\"${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}\"}" \
+            | jq -r '.token')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to obtain DefectDojo token"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "DD_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
       - name: Import Gitleaks
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Gitleaks Scan'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/gitleaks/results.sarif
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Gitleaks Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/gitleaks/results.sarif"
 
       - name: Import Semgrep
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Semgrep JSON Report'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/semgrep/semgrep.sarif
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Semgrep JSON Report" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/semgrep/semgrep.sarif"
 
       - name: Import Retire.js
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Retire.js Scan'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/retirejs/retire.json
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Retire.js Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/retirejs/retire.json"
 
       - name: Import Trivy Config
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Dockerfile Scan'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/trivy-config/trivy-config.sarif
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Trivy Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/trivy-config/trivy-config.sarif"
 
       - name: Import Trivy Image
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Trivy Image Scan'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/trivy-image/trivy-image.sarif
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Trivy Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/trivy-image/trivy-image.sarif"
 
       - name: Import ZAP
-        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'ZAP Scan'
-          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/zap_scan/report_json.json
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=ZAP Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/zap_scan/report_json.json"
 
   deploy:
     runs-on: ubuntu-latest
