@@ -177,6 +177,7 @@ jobs:
             report_md.md
             report_html.html
 
+            
   defectdojo:
     runs-on: ubuntu-latest
     needs: [gitleaks, semgrep, retirejs, trivy-config, trivy-image, zap]
