@@ -1,0 +1,127 @@
+name: Terraform DevSecOps Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose action to perform"
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+
+env:
+  TF_WORKING_DIR: Terraform-IAC
+
+permissions:
+  contents: read
+  
+
+jobs:
+
+  plan:
+    name: Terraform Plan (${{ github.event.inputs.action }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Init
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
+            terraform plan -destroy -out=tfplan
+          else
+            terraform plan -out=tfplan
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+
+  security-scan:
+    name: IaC Security Scans
+    if: github.event.inputs.action == 'apply'
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        continue-on-error: true
+        with:
+          working_directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        continue-on-error: true
+        with:
+          directory: ${{ env.TF_WORKING_DIR }}
+          framework: terraform
+
+  execute:
+    name: Terraform ${{ github.event.inputs.action }}
+    needs: [plan, security-scan]
+    if: always() && needs.plan.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Init
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Apply / Destroy
+        run: terraform apply -auto-approve tfplan
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # ── On apply: push the generated SSH key + host into repo secrets
+      #    so the Juice Shop deploy pipeline can use them. ──
+      - name: Publish EC2 host + SSH key to repo secrets
+        if: github.event.inputs.action == 'apply'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          EC2_HOST=$(terraform output -raw ec2_host)
+          terraform output -raw ssh_private_key > /tmp/id_ed25519
+
+          gh secret set EC2_HOST  --body "$EC2_HOST"          --repo ${{ github.repository }}
+          gh secret set EC2_USER  --body "ec2-user"            --repo ${{ github.repository }}
+          gh secret set EC2_SSH_PRIVATE_KEY --body "$(cat /tmp/id_ed25519)" --repo ${{ github.repository }}
+
+          echo "Provisioned: $EC2_HOST"
+          echo "Secrets EC2_HOST, EC2_USER, EC2_SSH_PRIVATE_KEY updated."
