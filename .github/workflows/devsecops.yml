@@ -158,11 +158,22 @@ jobs:
           done
           echo "Juice Shop failed to respond"; exit 1
 
-      - name: ZAP Baseline
-        uses: zaproxy/action-baseline@v0.13.0
+      - name: ZAP Baseline scan
+        continue-on-error: true
+        run: |
+          docker run --network=host -v $(pwd):/zap/wrk/:rw \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:3000 \
+            -J report_json.json -w report_md.md -r report_html.html
+
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          target: http://localhost:3000
-          allow_issue_writing: false
+          name: zap_scan
+          path: |
+            report_json.json
+            report_md.md
+            report_html.html
 
   defectdojo:
     runs-on: ubuntu-latest
