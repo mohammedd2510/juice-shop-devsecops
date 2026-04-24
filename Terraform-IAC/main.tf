@@ -98,19 +98,3 @@ resource "aws_instance" "juice" {
 }
 
 
-output "ec2_instance_id" {
-  value = aws_instance.juice.id
-}
-
-output "ec2_public_ip" {
-  value = aws_instance.juice.public_ip
-}
-
-
-variable "region" {
-  default = "us-east-1"
-}
-
-variable "instance_type" {
-  default = "t3.small"
-}
