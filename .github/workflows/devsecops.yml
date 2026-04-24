@@ -173,14 +173,14 @@ jobs:
           docker run --network=host -v $(pwd):/zap/wrk/:rw \
             -t ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://localhost:3000 \
-            -J report_json.json -w report_md.md -r report_html.html
+            -x report.xml -w report_md.md -r report_html.html
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap_scan
           path: |
-            report_json.json
+            report.xml
             report_md.md
             report_html.html
 
@@ -270,10 +270,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/trivy-image/trivy-image.json"
 
-      - name: Reimport ZAP
+      - name: Upload ZAP findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -281,7 +281,7 @@ jobs:
             -F "environment=${ENVIRONMENT}" \
             -F "scan_type=ZAP Scan" \
             -F "auto_create_context=true" \
-            -F "file=@reports/zap_scan/report_json.json"
+            -F "file=@reports/zap_scan/report.xml"
 
   deploy:
     runs-on: ubuntu-latest
