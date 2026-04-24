@@ -1,4 +1,4 @@
-name: CICD DevSecOps Pipeline
+name: DevSecOps Pipeline
 
 on:
   push:
@@ -32,265 +32,243 @@ jobs:
           name: gitleaks
           path: results.sarif
 
-          
+  semgrep:
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        continue-on-error: true
+        run: semgrep scan --config auto --sarif-output=semgrep.sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep
+          path: semgrep.sarif
 
-  # semgrep:
-  #   runs-on: ubuntu-latest
-  #   container: semgrep/semgrep
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Semgrep scan
-  #       continue-on-error: true
-  #       run: semgrep scan --config auto --sarif-output=semgrep.sarif
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: semgrep
-  #         path: semgrep.sarif
+  retirejs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  # retirejs:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node-modules-
 
-  #     - name: Cache node_modules
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: node_modules
-  #         key: node-modules-${{ hashFiles('package-lock.json') }}
-  #         restore-keys: |
-  #           node-modules-
+      - name: Install dependencies
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
 
-  #     - name: Install dependencies
-  #       run: npm ci --ignore-scripts || npm install --ignore-scripts
+      - name: Install Retire.js
+        run: npm install -g retire
 
-  #     - name: Install Retire.js
-  #       run: npm install -g retire
+      - name: Retire.js scan
+        continue-on-error: true
+        run: retire --outputformat json --outputpath retire.json --verbose
 
-  #     - name: Retire.js scan
-  #       continue-on-error: true
-  #       run: retire --outputformat json --outputpath retire.json --verbose
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: retirejs
+          path: retire.json
 
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: retirejs
-  #         path: retire.json
+  trivy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          scan-type: config
+          scan-ref: Dockerfile
+          format: sarif
+          output: trivy-config.sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-config
+          path: trivy-config.sarif
 
-  # trivy-config:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Trivy config scan
-  #       uses: aquasecurity/trivy-action@master
-  #       continue-on-error: true
-  #       with:
-  #         scan-type: config
-  #         scan-ref: Dockerfile
-  #         format: sarif
-  #         output: trivy-config.sarif
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: trivy-config
-  #         path: trivy-config.sarif
+  build-push:
+    runs-on: ubuntu-latest
+    needs: [gitleaks, semgrep, retirejs, trivy-config]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_SUMMARY: false
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_SHA }}
+            ${{ env.IMAGE_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  # build-push:
-  #   runs-on: ubuntu-latest
-  #   needs: [gitleaks, semgrep, retirejs, trivy-config]
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: docker/setup-buildx-action@v3
-  #     - uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-  #     - uses: docker/build-push-action@v6
-  #       env:
-  #         DOCKER_BUILD_SUMMARY: false
-  #         DOCKER_BUILD_RECORD_UPLOAD: false
-  #       with:
-  #         context: .
-  #         push: true
-  #         tags: |
-  #           ${{ env.IMAGE_SHA }}
-  #           ${{ env.IMAGE_REPO }}:latest
-  #         cache-from: type=gha
-  #         cache-to: type=gha,mode=max
+  trivy-image:
+    runs-on: ubuntu-latest
+    needs: build-push
+    steps:
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.IMAGE_SHA }}
+          format: sarif
+          output: trivy-image.sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-image
+          path: trivy-image.sarif
 
-  # trivy-image:
-  #   runs-on: ubuntu-latest
-  #   needs: build-push
-  #   steps:
-  #     - name: Trivy image scan
-  #       uses: aquasecurity/trivy-action@master
-  #       continue-on-error: true
-  #       with:
-  #         image-ref: ${{ env.IMAGE_SHA }}
-  #         format: sarif
-  #         output: trivy-image.sarif
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: trivy-image
-  #         path: trivy-image.sarif
+  zap:
+    runs-on: ubuntu-latest
+    needs: build-push
+    services:
+      juiceshop:
+        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 3000:3000
+    steps:
+      - name: Wait for Juice Shop
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3000/ >/dev/null; then
+              echo "Juice Shop is up"; exit 0
+            fi
+            echo "waiting... ($i)"; sleep 2
+          done
+          echo "Juice Shop failed to respond"; exit 1
 
-  # zap:
-  #   runs-on: ubuntu-latest
-  #   needs: build-push
-  #   services:
-  #     juiceshop:
-  #       image: ghcr.io/${{ github.repository }}:${{ github.sha }}
-  #       credentials:
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-  #       ports:
-  #         - 3000:3000
-  #   steps:
-  #     - name: Wait for Juice Shop
-  #       run: |
-  #         for i in {1..60}; do
-  #           if curl -sf http://localhost:3000/ >/dev/null; then
-  #             echo "Juice Shop is up"; exit 0
-  #           fi
-  #           echo "waiting... ($i)"; sleep 2
-  #         done
-  #         echo "Juice Shop failed to respond"; exit 1
+      - name: ZAP Baseline scan
+        continue-on-error: true
+        run: |
+          chmod -R a+w .
+          docker run --network=host -v $(pwd):/zap/wrk/:rw \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:3000 \
+            -J report_json.json -w report_md.md -r report_html.html
 
-  #     - name: ZAP Baseline scan
-  #       continue-on-error: true
-  #       run: |
-  #         chmod -R a+w .
-  #         docker run --network=host -v $(pwd):/zap/wrk/:rw \
-  #           -t ghcr.io/zaproxy/zaproxy:stable \
-  #           zap-baseline.py -t http://localhost:3000 \
-  #           -J report_json.json -w report_md.md -r report_html.html
-
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: zap_scan
-  #         path: |
-  #           report_json.json
-  #           report_md.md
-  #           report_html.html
-
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap_scan
+          path: |
+            report_json.json
+            report_md.md
+            report_html.html
 
   defectdojo:
     runs-on: ubuntu-latest
-  #  needs: [gitleaks, semgrep, retirejs, trivy-config, trivy-image, zap]
-    needs: [gitleaks]
+    needs: [gitleaks, semgrep, retirejs, trivy-config, trivy-image, zap]
     if: always()
-    env:
-      DD_URL: ${{ secrets.DEFECTDOJO_URL }}
-      PRODUCT_TYPE: 'Research and Development'
-      PRODUCT: 'Juice Shop DevSecOps'
-      ENVIRONMENT: 'Development'
-      ENGAGEMENT: juice-shop-${{ github.ref_name }}
     steps:
-      - name: Map defectdojo.local to EC2 host
-        run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
-        
       - uses: actions/download-artifact@v4
         with:
           path: reports
 
-      - name: Get DefectDojo API token
-        run: |
-          TOKEN=$(curl -sf -X POST "${DD_URL}/api/v2/api-token-auth/" \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"admin\",\"password\":\"${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}\"}" \
-            | jq -r '.token')
-
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "Failed to obtain DefectDojo token"
-            exit 1
-          fi
-
-          echo "::add-mask::$TOKEN"
-          echo "DD_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-
       - name: Import Gitleaks
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=Gitleaks Scan" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/gitleaks/results.sarif"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Gitleaks Scan'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/gitleaks/results.sarif
 
       - name: Import Semgrep
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=Semgrep JSON Report" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/semgrep/semgrep.sarif"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Semgrep JSON Report'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/semgrep/semgrep.sarif
 
       - name: Import Retire.js
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=Retire.js Scan" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/retirejs/retire.json"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Retire.js Scan'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/retirejs/retire.json
 
       - name: Import Trivy Config
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=Trivy Scan" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/trivy-config/trivy-config.sarif"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Trivy Scan'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/trivy-config/trivy-config.sarif
 
       - name: Import Trivy Image
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=Trivy Scan" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/trivy-image/trivy-image.sarif"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Trivy Scan'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/trivy-image/trivy-image.sarif
 
       - name: Import ZAP
+        uses: portswigger-cloud/defectdojo-import-scan@v1
         continue-on-error: true
-        run: |
-          curl -sf -X POST "${DD_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token ${DD_TOKEN}" \
-            -F "product_type_name=${PRODUCT_TYPE}" \
-            -F "product_name=${PRODUCT}" \
-            -F "engagement_name=${ENGAGEMENT}" \
-            -F "environment=${ENVIRONMENT}" \
-            -F "scan_type=ZAP Scan" \
-            -F "auto_create_context=true" \
-            -F "file=@reports/zap_scan/report_json.json"
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'ZAP Scan'
+          defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
+          scan-results-file-name: reports/zap_scan/report_json.json
 
   deploy:
     runs-on: ubuntu-latest

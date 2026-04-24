@@ -69,6 +69,13 @@ jobs:
         continue-on-error: true
         with:
           working_directory: ${{ env.TF_WORKING_DIR }}
+          additional_args: --format sarif --out tfsec.sarif
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tfsec
+          path: ${{ env.TF_WORKING_DIR }}/tfsec.sarif
 
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -76,11 +83,57 @@ jobs:
         with:
           directory: ${{ env.TF_WORKING_DIR }}
           framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkov
+          path: checkov-results/results_sarif.sarif
+
+  defectdojo:
+    name: Import IaC Scans to DefectDojo
+    if: github.event.inputs.action == 'apply'
+    needs: security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: Import tfsec
+        uses: portswigger-cloud/defectdojo-import-scan@v1
+        continue-on-error: true
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'SARIF'
+          defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
+          scan-results-file-name: reports/tfsec/tfsec.sarif
+
+      - name: Import Checkov
+        uses: portswigger-cloud/defectdojo-import-scan@v1
+        continue-on-error: true
+        with:
+          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
+          defectdojo-username: admin
+          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
+          defectdojo-product-type: 'Research and Development'
+          defectdojo-product: 'Juice Shop DevSecOps'
+          defectdojo-environment-type: 'Development'
+          defectdojo-scan-type: 'Checkov Scan'
+          defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
+          scan-results-file-name: reports/checkov/results_sarif.sarif
 
   execute:
     name: Terraform ${{ github.event.inputs.action }}
-    needs: [plan, security-scan]
-    if: always() && needs.plan.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped')
+    needs: [plan, security-scan, defectdojo]
+    if: always() && needs.plan.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') && (needs.defectdojo.result == 'success' || needs.defectdojo.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -108,20 +161,16 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # ── On apply: push the generated SSH key + host into repo secrets
-      #    so the Juice Shop deploy pipeline can use them. ──
-      - name: Publish EC2 host + SSH key to repo secrets
+      - name: Print outputs
         if: github.event.inputs.action == 'apply'
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          EC2_HOST=$(terraform output -raw ec2_public_ip)
-          terraform output -raw ssh_private_key > /tmp/id_ed25519
-
-          gh secret set EC2_HOST --body "$EC2_HOST" --repo ${{ github.repository }}
-          gh secret set EC2_USER --body "ec2-user"  --repo ${{ github.repository }}
-          gh secret set EC2_SSH_PRIVATE_KEY --body "$(cat /tmp/id_ed25519)" --repo ${{ github.repository }}
-
-          echo "Provisioned: $EC2_HOST"
+          echo "EC2 host: $(terraform output -raw ec2_host)"
+          echo "EC2 IP:   $(terraform output -raw ec2_public_ip)"
+          echo ""
+          echo "Set these as repo secrets (from your laptop):"
+          echo "  gh secret set EC2_HOST --body '<host-above>'"
+          echo "  gh secret set EC2_USER --body 'ec2-user'"
+          echo "  gh secret set EC2_SSH_PRIVATE_KEY --body \"\$(terraform output -raw ssh_private_key)\""
