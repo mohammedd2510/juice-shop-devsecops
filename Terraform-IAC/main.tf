@@ -96,5 +96,3 @@ resource "aws_instance" "juice" {
     Name = "juice-shop-demo"
   }
 }
-
-
