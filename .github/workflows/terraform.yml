@@ -89,7 +89,7 @@ jobs:
         with:
           directory: ${{ env.TF_WORKING_DIR }}
           framework: terraform
-          output_format: sarif
+          output_format: json
           output_file_path: checkov-results
 
       - uses: actions/upload-artifact@v4
