@@ -71,10 +71,6 @@ jobs:
           working_directory: ${{ env.TF_WORKING_DIR }}
           sarif_file: tfsec.sarif
 
-      - name: Verify tfsec output
-        if: always()
-        run: ls -la tfsec.sarif
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -87,19 +83,15 @@ jobs:
         with:
           directory: ${{ env.TF_WORKING_DIR }}
           framework: terraform
-          output_format: sarif
+          output_format: json
           output_file_path: checkov-results
           soft_fail: true
-
-      - name: Verify checkov output
-        if: always()
-        run: ls -la checkov-results/
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: checkov
-          path: checkov-results/results_sarif.sarif
+          path: checkov-results/results_json.json
 
   defectdojo:
     name: Import IaC Scans to DefectDojo
@@ -121,7 +113,7 @@ jobs:
           defectdojo-product-type: 'Research and Development'
           defectdojo-product: 'Juice Shop DevSecOps'
           defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'SARIF'
+          defectdojo-scan-type: 'TFSec Scan'
           defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
           scan-results-file-name: reports/tfsec/tfsec.sarif
 
@@ -137,7 +129,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'Checkov Scan'
           defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
-          scan-results-file-name: reports/checkov/results_sarif.sarif
+          scan-results-file-name: reports/checkov/results_json.json
 
   execute:
     name: Terraform ${{ github.event.inputs.action }}
