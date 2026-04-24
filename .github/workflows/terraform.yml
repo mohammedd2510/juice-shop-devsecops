@@ -13,9 +13,12 @@ on:
 
 env:
   TF_WORKING_DIR: Terraform-IAC
+  AWS_ROLE_ARN:   arn:aws:iam::167140819348:role/GithubActions_Role
+  AWS_REGION:     us-east-1
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
 
@@ -27,15 +30,19 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gh-actions-tf-plan
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.7.0
 
       - name: Terraform Init
         run: terraform init
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Terraform Validate
         run: terraform validate
@@ -47,9 +54,6 @@ jobs:
           else
             terraform plan -out=tfplan
           fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -94,8 +98,8 @@ jobs:
           name: checkov
           path: checkov-results/results_json.json
 
-  defectdojo:
-    name: Reimport IaC Scans to DefectDojo
+  publish-to-defectdojo:
+    name: Publish IaC findings to DefectDojo
     if: github.event.inputs.action == 'apply'
     needs: security-scan
     runs-on: ubuntu-latest
@@ -114,10 +118,10 @@ jobs:
         with:
           path: reports
 
-      - name: Reimport tfsec
+      - name: Upload tfsec findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -127,10 +131,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/tfsec/tfsec.json"
 
-      - name: Reimport Checkov
+      - name: Upload Checkov findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -142,14 +146,21 @@ jobs:
 
   execute:
     name: Terraform ${{ github.event.inputs.action }}
-    needs: [plan, security-scan, defectdojo]
-    if: always() && needs.plan.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') && (needs.defectdojo.result == 'success' || needs.defectdojo.result == 'skipped')
+    needs: [plan, security-scan, publish-to-defectdojo]
+    if: always() && needs.plan.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') && (needs.publish-to-defectdojo.result == 'success' || needs.publish-to-defectdojo.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gh-actions-tf-${{ github.event.inputs.action }}
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.7.0
@@ -161,26 +172,17 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Terraform Apply / Destroy
         run: terraform apply -auto-approve tfplan
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Print outputs
         if: github.event.inputs.action == 'apply'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          echo "EC2 host: $(terraform output -raw ec2_host)"
-          echo "EC2 IP:   $(terraform output -raw ec2_public_ip)"
+          echo "=== Outputs ==="
+          terraform output -json
+          EC2_ID=$(terraform output -raw ec2_instance_id)
           echo ""
-          echo "Set these as repo secrets (from your laptop):"
-          echo "  gh secret set EC2_HOST --body '$(terraform output -raw ec2_public_ip)'"
-          echo "  gh secret set EC2_USER --body 'ec2-user'"
-          echo "  gh secret set EC2_SSH_PRIVATE_KEY --body \"$(terraform output -raw ssh_private_key)\""
+          echo "EC2 instance ID: $EC2_ID"
+          echo "EC2 Instance Public IP: $(terraform output -raw ec2_public_ip)"
+          echo "Update EC2_INSTANCE_ID in .github/workflows/cicd-devsecops.yml with this value."

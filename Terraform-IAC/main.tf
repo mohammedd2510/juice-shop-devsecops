@@ -12,10 +12,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
   }
 }
 
@@ -23,15 +19,6 @@ provider "aws" {
   region = var.region
 }
 
-# ── Generate SSH keypair on the fly ─────────────────────────────
-resource "tls_private_key" "juice" {
-  algorithm = "ED25519"
-}
-
-resource "aws_key_pair" "juice" {
-  key_name   = "juice-shop-demo"
-  public_key = tls_private_key.juice.public_key_openssh
-}
 
 # ── Latest Amazon Linux 2023 AMI ────────────────────────────────
 data "aws_ami" "al2023" {
@@ -43,17 +30,36 @@ data "aws_ami" "al2023" {
   }
 }
 
-# ── Security group: SSH + Juice Shop port 3000 ──────────────────
+
+# ── IAM role + instance profile for SSM ─────────────────────────
+resource "aws_iam_role" "ec2_ssm" {
+  name = "juice-shop-ec2-ssm"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.ec2_ssm.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ec2_ssm" {
+  name = "juice-shop-ec2-ssm"
+  role = aws_iam_role.ec2_ssm.name
+}
+
+
+# ── Security group: Juice Shop port 3000 only (SSH removed) ─────
 resource "aws_security_group" "juice" {
   name        = "juice-shop-demo"
   description = "Juice Shop demo deploy target"
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   ingress {
     from_port   = 3000
@@ -70,21 +76,41 @@ resource "aws_security_group" "juice" {
   }
 }
 
-# ── EC2 instance with docker installed via user_data ────────────
+
+# ── EC2 instance with docker + SSM agent ────────────────────────
 resource "aws_instance" "juice" {
   ami                    = data.aws_ami.al2023.id
   instance_type          = var.instance_type
-  key_name               = aws_key_pair.juice.key_name
   vpc_security_group_ids = [aws_security_group.juice.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_ssm.name
 
   user_data = <<-EOF
     #!/bin/bash
     dnf install -y docker
     systemctl enable --now docker
     usermod -aG docker ec2-user
+    systemctl enable --now amazon-ssm-agent
   EOF
 
   tags = {
     Name = "juice-shop-demo"
   }
+}
+
+
+output "ec2_instance_id" {
+  value = aws_instance.juice.id
+}
+
+output "ec2_public_ip" {
+  value = aws_instance.juice.public_ip
+}
+
+
+variable "region" {
+  default = "us-east-1"
+}
+
+variable "instance_type" {
+  default = "t3.small"
 }
