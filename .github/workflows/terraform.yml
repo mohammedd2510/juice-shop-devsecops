@@ -181,6 +181,6 @@ jobs:
           echo "EC2 IP:   $(terraform output -raw ec2_public_ip)"
           echo ""
           echo "Set these as repo secrets (from your laptop):"
-          echo "  gh secret set EC2_HOST --body '<host-above>'"
+          echo "  gh secret set EC2_HOST --body '$(terraform output -raw ec2_host)'"
           echo "  gh secret set EC2_USER --body 'ec2-user'"
-          echo "  gh secret set EC2_SSH_PRIVATE_KEY --body \"\$(terraform output -raw ssh_private_key)\""
+          echo "  gh secret set EC2_SSH_PRIVATE_KEY --body \"$(terraform output -raw ssh_private_key)\""
