@@ -76,7 +76,7 @@ jobs:
         if: always()
         with:
           name: tfsec
-          path: ${{ env.TF_WORKING_DIR }}/tfsec.json
+          path: tfsec.json
 
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
