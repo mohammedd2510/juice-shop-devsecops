@@ -21,16 +21,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+
+      - name: Install gitleaks
+        run: |
+          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Gitleaks scan
         continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_SUMMARY: "true"
+        run: |
+          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-git || true
+          [ -s gitleaks.json ] || echo '[]' > gitleaks.json
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: gitleaks
-          path: results.sarif
+          path: gitleaks.json
 
   semgrep:
     runs-on: ubuntu-latest
@@ -39,12 +46,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Semgrep scan
         continue-on-error: true
-        run: semgrep scan --config auto --sarif-output=semgrep.sarif
+        run: semgrep scan --config auto --json --output semgrep.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: semgrep
-          path: semgrep.sarif
+          path: semgrep.json
 
   retirejs:
     runs-on: ubuntu-latest
@@ -88,13 +95,13 @@ jobs:
         with:
           scan-type: config
           scan-ref: Dockerfile
-          format: sarif
-          output: trivy-config.sarif
+          format: json
+          output: trivy-config.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trivy-config
-          path: trivy-config.sarif
+          path: trivy-config.json
 
   build-push:
     runs-on: ubuntu-latest
@@ -129,13 +136,13 @@ jobs:
         continue-on-error: true
         with:
           image-ref: ${{ env.IMAGE_SHA }}
-          format: sarif
-          output: trivy-image.sarif
+          format: json
+          output: trivy-image.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trivy-image
-          path: trivy-image.sarif
+          path: trivy-image.json
 
   zap:
     runs-on: ubuntu-latest
@@ -198,7 +205,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'Gitleaks Scan'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/gitleaks/results.sarif
+          scan-results-file-name: reports/gitleaks/gitleaks.json
 
       - name: Import Semgrep
         uses: portswigger-cloud/defectdojo-import-scan@v1
@@ -212,7 +219,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'Semgrep JSON Report'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/semgrep/semgrep.sarif
+          scan-results-file-name: reports/semgrep/semgrep.json
 
       - name: Import Retire.js
         uses: portswigger-cloud/defectdojo-import-scan@v1
@@ -240,7 +247,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'Trivy Scan'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/trivy-config/trivy-config.sarif
+          scan-results-file-name: reports/trivy-config/trivy-config.json
 
       - name: Import Trivy Image
         uses: portswigger-cloud/defectdojo-import-scan@v1
@@ -254,7 +261,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'Trivy Scan'
           defectdojo-engagement-name: juice-shop-${{ github.ref_name }}
-          scan-results-file-name: reports/trivy-image/trivy-image.sarif
+          scan-results-file-name: reports/trivy-image/trivy-image.json
 
       - name: Import ZAP
         uses: portswigger-cloud/defectdojo-import-scan@v1
