@@ -95,42 +95,49 @@ jobs:
           path: checkov-results/results_json.json
 
   defectdojo:
-    name: Import IaC Scans to DefectDojo
+    name: Reimport IaC Scans to DefectDojo
     if: github.event.inputs.action == 'apply'
     needs: security-scan
     runs-on: ubuntu-latest
+    env:
+      DD_TOKEN: ${{ secrets.DEFECTDOJO_API_TOKEN }}
+      DD_URL: ${{ secrets.DEFECTDOJO_URL }}
+      DD_ENDPOINT: /api/v2/reimport-scan/
+      ENGAGEMENT: terraform-iac-${{ github.ref_name }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: reports
 
-      - name: Import tfsec
-        uses: portswigger-cloud/defectdojo-import-scan@v1
+      - name: Reimport tfsec
+        uses: ivanamat/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'TFSec Scan'
-          defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
-          scan-results-file-name: reports/tfsec/tfsec.json
+          token: ${{ env.DD_TOKEN }}
+          defectdojo_url: ${{ env.DD_URL }}
+          defectdojo_endpoint: ${{ env.DD_ENDPOINT }}
+          file: reports/tfsec/tfsec.json
+          scan_type: 'TFSec Scan'
+          product_type_name: 'Research and Development'
+          product_name: 'Juice Shop DevSecOps'
+          engagement_name: ${{ env.ENGAGEMENT }}
+          environment: 'Development'
+          auto_create_context: 'true'
 
-      - name: Import Checkov
-        uses: portswigger-cloud/defectdojo-import-scan@v1
+      - name: Reimport Checkov
+        uses: ivanamat/defectdojo-import-scan@v1
         continue-on-error: true
         with:
-          defectdojo-url: ${{ secrets.DEFECTDOJO_URL }}
-          defectdojo-username: admin
-          defectdojo-password: ${{ secrets.DEFECTDOJO_ADMIN_PASSWORD }}
-          defectdojo-product-type: 'Research and Development'
-          defectdojo-product: 'Juice Shop DevSecOps'
-          defectdojo-environment-type: 'Development'
-          defectdojo-scan-type: 'Checkov Scan'
-          defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
-          scan-results-file-name: reports/checkov/results_json.json
+          token: ${{ env.DD_TOKEN }}
+          defectdojo_url: ${{ env.DD_URL }}
+          defectdojo_endpoint: ${{ env.DD_ENDPOINT }}
+          file: reports/checkov/results_json.json
+          scan_type: 'Checkov Scan'
+          product_type_name: 'Research and Development'
+          product_name: 'Juice Shop DevSecOps'
+          engagement_name: ${{ env.ENGAGEMENT }}
+          environment: 'Development'
+          auto_create_context: 'true'
 
   execute:
     name: Terraform ${{ github.event.inputs.action }}
