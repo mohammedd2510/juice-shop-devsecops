@@ -116,7 +116,7 @@ jobs:
           defectdojo-environment-type: 'Development'
           defectdojo-scan-type: 'TFSec Scan'
           defectdojo-engagement-name: terraform-iac-${{ github.ref_name }}
-          scan-results-file-name: reports/tfsec/tfsec.sarif
+          scan-results-file-name: reports/tfsec/tfsec.json
 
       - name: Import Checkov
         uses: portswigger-cloud/defectdojo-import-scan@v1
