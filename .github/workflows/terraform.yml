@@ -76,7 +76,7 @@ jobs:
         if: always()
         with:
           name: tfsec
-          path: tfsec.json
+          path: ${{ env.TF_WORKING_DIR }}/tfsec.json
 
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -100,44 +100,45 @@ jobs:
     needs: security-scan
     runs-on: ubuntu-latest
     env:
+      DD_URL: http://defectdojo.local
       DD_TOKEN: ${{ secrets.DEFECTDOJO_API_TOKEN }}
-      DD_URL: ${{ secrets.DEFECTDOJO_URL }}
-      DD_ENDPOINT: /api/v2/reimport-scan/
-      ENGAGEMENT: terraform-iac-${{ github.ref_name }}
+      PRODUCT_TYPE: 'Research and Development'
+      PRODUCT: 'Juice Shop DevSecOps'
+      ENVIRONMENT: 'Development'
+      ENGAGEMENT: juice-shop-${{ github.ref_name }}
     steps:
+      - name: Map defectdojo.local in /etc/hosts
+        run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
+
       - uses: actions/download-artifact@v4
         with:
           path: reports
 
       - name: Reimport tfsec
-        uses: ivanamat/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          token: ${{ env.DD_TOKEN }}
-          defectdojo_url: ${{ env.DD_URL }}
-          defectdojo_endpoint: ${{ env.DD_ENDPOINT }}
-          file: reports/tfsec/tfsec.json
-          scan_type: 'TFSec Scan'
-          product_type_name: 'Research and Development'
-          product_name: 'Juice Shop DevSecOps'
-          engagement_name: ${{ env.ENGAGEMENT }}
-          environment: 'Development'
-          auto_create_context: 'true'
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=TFSec Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/tfsec/tfsec.json"
 
       - name: Reimport Checkov
-        uses: ivanamat/defectdojo-import-scan@v1
         continue-on-error: true
-        with:
-          token: ${{ env.DD_TOKEN }}
-          defectdojo_url: ${{ env.DD_URL }}
-          defectdojo_endpoint: ${{ env.DD_ENDPOINT }}
-          file: reports/checkov/results_json.json
-          scan_type: 'Checkov Scan'
-          product_type_name: 'Research and Development'
-          product_name: 'Juice Shop DevSecOps'
-          engagement_name: ${{ env.ENGAGEMENT }}
-          environment: 'Development'
-          auto_create_context: 'true'
+        run: |
+          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F "product_type_name=${PRODUCT_TYPE}" \
+            -F "product_name=${PRODUCT}" \
+            -F "engagement_name=${ENGAGEMENT}" \
+            -F "environment=${ENVIRONMENT}" \
+            -F "scan_type=Checkov Scan" \
+            -F "auto_create_context=true" \
+            -F "file=@reports/checkov/results_json.json"
 
   execute:
     name: Terraform ${{ github.event.inputs.action }}
