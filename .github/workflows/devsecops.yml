@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline
+name: CICD DevSecOps Pipeline
 
 on:
   push:
@@ -184,7 +184,8 @@ jobs:
             report_md.md
             report_html.html
 
-  defectdojo:
+  publish-to-defectdojo:
+    name: Publish findings to DefectDojo
     runs-on: ubuntu-latest
     needs: [gitleaks, semgrep, retirejs, trivy-config, trivy-image, zap]
     if: always()
@@ -203,10 +204,10 @@ jobs:
         with:
           path: reports
 
-      - name: Reimport Gitleaks
+      - name: Upload Gitleaks findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -216,10 +217,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/gitleaks/gitleaks.json"
 
-      - name: Reimport Semgrep
+      - name: Upload Semgrep findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -229,10 +230,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/semgrep/semgrep.json"
 
-      - name: Reimport Retire.js
+      - name: Upload Retire.js findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -242,10 +243,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/retirejs/retire.json"
 
-      - name: Reimport Trivy Config (Dockerfile)
+      - name: Upload Trivy Dockerfile findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -256,10 +257,10 @@ jobs:
             -F "auto_create_context=true" \
             -F "file=@reports/trivy-config/trivy-config.json"
 
-      - name: Reimport Trivy Image
+      - name: Upload Trivy image findings
         continue-on-error: true
         run: |
-          curl -sf -X POST "${DD_URL}/api/v2/reimport-scan/" \
+          curl -sS -X POST "${DD_URL}/api/v2/reimport-scan/" \
             -H "Authorization: Token ${DD_TOKEN}" \
             -F "product_type_name=${PRODUCT_TYPE}" \
             -F "product_name=${PRODUCT}" \
@@ -285,7 +286,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    needs: defectdojo
+    needs: publish-to-defectdojo
     steps:
       - uses: appleboy/ssh-action@v1.2.0
         with:
