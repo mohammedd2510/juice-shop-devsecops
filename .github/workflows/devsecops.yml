@@ -200,9 +200,10 @@ jobs:
       PRODUCT: 'Juice Shop DevSecOps'
       ENVIRONMENT: 'Development'
       ENGAGEMENT: juice-shop-${{ github.ref_name }}
+      DD_HOST_IP: <IP_ADDRESS> # Update with actual DefectDojo host IP
     steps:
       - name: Map defectdojo.local in /etc/hosts
-        run: echo "${{ secrets.DEFECTDOJO_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
+        run: echo "${{ env.DD_HOST_IP }} defectdojo.local" | sudo tee -a /etc/hosts
 
       - uses: actions/download-artifact@v4
         with:
